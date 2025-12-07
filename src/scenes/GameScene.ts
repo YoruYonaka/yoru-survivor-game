@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 // 先ほど作成したアセット管理ファイルをインポート
 import { ASSETS } from '../AssetManifest';
 
+
 export default class GameScene extends Phaser.Scene {
     // プレイヤー
     private player!: Phaser.Physics.Arcade.Sprite;
