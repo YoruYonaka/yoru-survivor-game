@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import Projectile from './Projectile';
 import { ASSETS } from '../AssetManifest';
+import type { PlayerMetaStats } from '../utils/DataManager';
 
 type WASDKeys = {
     up: Phaser.Input.Keyboard.Key;
@@ -13,6 +14,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     private speed: number = 200;
     private hp: number = 100;
     private maxHp: number = 100;
+    private damage: number = 10;
 
     // EXP System
     private exp: number = 0;
@@ -28,7 +30,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     private wasd?: WASDKeys;
     private joyStickCursors?: Phaser.Types.Input.Keyboard.CursorKeys;
 
-    constructor(scene: Phaser.Scene, x: number, y: number, texture: string) {
+    constructor(scene: Phaser.Scene, x: number, y: number, texture: string, metaStats: PlayerMetaStats) {
         super(scene, x, y, texture);
 
         // Setup physics body
@@ -37,6 +39,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.setDisplaySize(32, 32);
         this.setCircle(12);
         this.setOffset(4, 4);
+
+        this.applyMetaStats(metaStats);
 
         // Initialize Input Keys directly
         if (scene.input.keyboard) {
@@ -177,6 +181,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         switch (type) {
             case 'attack':
                 this.attackInterval = Math.max(100, this.attackInterval - 100);
+                this.damage += 2;
                 console.log(`Upgraded Attack Speed: ${this.attackInterval}`);
                 break;
             case 'speed':
@@ -201,6 +206,12 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             this.setTint(0xff0000);
             this.scene.physics.pause();
             console.log("GAME OVER");
+            this.setActive(false);
+            this.setVisible(false);
+            if (this.body) {
+                (this.body as Phaser.Physics.Arcade.Body).enable = false;
+            }
+            this.scene.events.emit('playerDead');
         }
     }
 
@@ -222,5 +233,16 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
     getLevel(): number {
         return this.level;
+    }
+
+    getDamage(): number {
+        return this.damage;
+    }
+
+    private applyMetaStats(metaStats: PlayerMetaStats) {
+        this.damage = metaStats.baseDamage;
+        this.speed = metaStats.baseSpeed;
+        this.maxHp = metaStats.baseMaxHp;
+        this.hp = this.maxHp;
     }
 }

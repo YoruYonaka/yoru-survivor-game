@@ -5,6 +5,7 @@ import Enemy from '../objects/Enemy';
 import Projectile from '../objects/Projectile';
 import ExpGem from '../objects/ExpGem';
 import UIScene from './UIScene';
+import DataManager from '../utils/DataManager';
 
 interface VirtualJoystick {
     createCursorKeys(): Phaser.Types.Input.Keyboard.CursorKeys;
@@ -28,6 +29,7 @@ export default class GameScene extends Phaser.Scene {
     private projectiles!: Phaser.Physics.Arcade.Group;
     private expGems!: Phaser.Physics.Arcade.Group;
     private killCount: number = 0;
+    private readonly dataManager = DataManager.instance;
 
     private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
     private joyStickCursors?: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -51,6 +53,8 @@ export default class GameScene extends Phaser.Scene {
     }
 
     create() {
+        this.isPaused = false;
+        this.killCount = 0;
         this.createGameTextures();
 
         // Background
@@ -80,7 +84,8 @@ export default class GameScene extends Phaser.Scene {
         });
 
         // Player
-        this.player = new Player(this, this.cameras.main.width / 2, this.cameras.main.height / 2, ASSETS.PLAYER.key);
+        const metaStats = this.dataManager.getPlayerMetaStats();
+        this.player = new Player(this, this.cameras.main.width / 2, this.cameras.main.height / 2, ASSETS.PLAYER.key, metaStats);
         this.add.existing(this.player);
         this.player.setEnemies(this.enemies);
         this.player.setProjectiles(this.projectiles);
@@ -126,6 +131,7 @@ export default class GameScene extends Phaser.Scene {
         // Events
         this.events.on('levelUp', this.onLevelUp, this);
         this.events.on('selectUpgrade', this.onSelectUpgrade, this);
+        this.events.on('playerDead', this.onGameOver, this);
     }
 
     update(time: number, delta: number) {
@@ -159,12 +165,8 @@ export default class GameScene extends Phaser.Scene {
 
         const enemy = this.enemies.get(clampX, clampY, ASSETS.ENEMY_BAT.key) as Enemy;
         if (enemy) {
-            enemy.setActive(true);
-            enemy.setVisible(true);
+            enemy.resetState(80, 30);
             enemy.setTarget(this.player);
-            if (enemy.body) {
-                enemy.body.enable = true;
-            }
         }
     }
 
@@ -182,27 +184,28 @@ export default class GameScene extends Phaser.Scene {
         projectile.setActive(false);
         projectile.setVisible(false);
 
-        // Spawn Gem
-        const gem = this.expGems.get(enemy.x, enemy.y, ASSETS.EXP_GEM.key) as ExpGem;
-        if (gem) {
-            gem.setActive(true);
-            gem.setVisible(true);
-            gem.resetState();
-            if (gem.body) {
-                const body = gem.body as Phaser.Physics.Arcade.Body;
-                body.enable = true;
-                body.setAllowGravity(false);
+        const isDead = enemy.takeDamage(this.player.getDamage());
+
+        if (isDead) {
+            const gem = this.expGems.get(enemy.x, enemy.y, ASSETS.EXP_GEM.key) as ExpGem;
+            if (gem) {
+                gem.setActive(true);
+                gem.setVisible(true);
+                gem.resetState();
+                if (gem.body) {
+                    const body = gem.body as Phaser.Physics.Arcade.Body;
+                    body.enable = true;
+                    body.setAllowGravity(false);
+                }
             }
+
+            enemy.setActive(false);
+            enemy.setVisible(false);
+            enemy.body!.enable = false;
+
+            this.killCount += 1;
+            this.events.emit('updateScore', this.killCount);
         }
-
-        // Destroy Enemy
-        enemy.setActive(false);
-        enemy.setVisible(false);
-        enemy.body!.enable = false;
-
-        // Update Score
-        this.killCount += 1;
-        this.events.emit('updateScore', this.killCount);
     }
 
     private handlePlayerGemCollision(_player: Player, gem: ExpGem) {
@@ -226,6 +229,18 @@ export default class GameScene extends Phaser.Scene {
         this.player.upgradeStat(type);
         this.isPaused = false;
         this.physics.resume();
+    }
+
+    private onGameOver() {
+        if (this.isPaused) return;
+        this.isPaused = true;
+        this.physics.pause();
+        this.scene.stop('UIScene');
+
+        const coinsEarned = this.killCount;
+        this.dataManager.addCoins(coinsEarned);
+
+        this.scene.start('TitleScene', { coinsEarned, killCount: this.killCount });
     }
 
     private createGameTextures() {
