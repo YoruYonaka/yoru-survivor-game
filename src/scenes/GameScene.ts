@@ -31,7 +31,7 @@ export default class GameScene extends Phaser.Scene {
             if (this.textures.exists(file.key)) return;
 
             // 仮の四角形（マゼンタ色）をメモリ上で作る
-            const graphics = this.make.graphics({ x: 0, y: 0, add: false });
+            const graphics = this.make.graphics({ x: 0, y: 0 });
 
             // 目立つ色（マゼンタ #FF00FF）にしておくと「画像入れ忘れてるぞ」と気づきやすい
             graphics.fillStyle(0xFF00FF);
