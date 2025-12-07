@@ -9,4 +9,7 @@ export const ASSETS = {
 
     // エフェクトや弾
     BULLET: { key: 'bullet', path: 'assets/bullet.png' },
+
+    // アイテム
+    EXP_GEM: { key: 'exp_gem', path: 'assets/exp_gem.png' },
 };

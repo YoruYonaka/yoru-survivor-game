@@ -1,144 +1,300 @@
 import Phaser from 'phaser';
-// 先ほど作成したアセット管理ファイルをインポート
 import { ASSETS } from '../AssetManifest';
-
+import Player from '../objects/Player';
+import Enemy from '../objects/Enemy';
+import Projectile from '../objects/Projectile';
+import ExpGem from '../objects/ExpGem';
+import UIScene from './UIScene';
 
 export default class GameScene extends Phaser.Scene {
-    // プレイヤー
-    private player!: Phaser.Physics.Arcade.Sprite;
+    private player!: Player;
+    private enemies!: Phaser.Physics.Arcade.Group;
+    private projectiles!: Phaser.Physics.Arcade.Group;
+    private expGems!: Phaser.Physics.Arcade.Group;
 
-    // 操作入力
-    private cursors!: Phaser.Types.Input.Keyboard.CursorKeys; // キーボード
-    private joyStickCursors?: Phaser.Types.Input.Keyboard.CursorKeys; // ジョイスティック（型定義があやふやな場合があるので?をつける）
-    private joyStick!: any; // プラグインの型定義を厳密に書くと長くなるので一旦anyで逃げます
+    private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
+    private joyStickCursors?: Phaser.Types.Input.Keyboard.CursorKeys;
+    private joyStick!: any;
+
+    private isPaused: boolean = false;
 
     constructor() {
         super('GameScene');
     }
 
     preload() {
-        // 1. アセットマニフェストから画像を読み込み開始
         Object.values(ASSETS).forEach((asset) => {
             this.load.image(asset.key, asset.path);
         });
 
-        // ▼ 追加: 画像が見つからなかった時のリカバリー処理
         this.load.on(Phaser.Loader.Events.FILE_LOAD_ERROR, (file: Phaser.Loader.File) => {
-            // どの画像が無かったかコンソールに警告を出す
-            console.warn(`画像が見つかりません: ${file.key} -> 仮のテクスチャを生成します`);
-
-            // 既にリカバリー済みなら何もしない
-            if (this.textures.exists(file.key)) return;
-
-            // 仮の四角形（マゼンタ色）をメモリ上で作る
-            const graphics = this.make.graphics({ x: 0, y: 0 });
-
-            // 目立つ色（マゼンタ #FF00FF）にしておくと「画像入れ忘れてるぞ」と気づきやすい
-            graphics.fillStyle(0xFF00FF);
-            graphics.fillRect(0, 0, 32, 32);
-
-            // "×"印を描いておく（お好みで）
-            graphics.lineStyle(2, 0x000000);
-            graphics.moveTo(0, 0);
-            graphics.lineTo(32, 32);
-            graphics.moveTo(32, 0);
-            graphics.lineTo(0, 32);
-
-            // 【重要】失敗したファイルと同じキー（名前）でテクスチャを登録する
-            // これにより、create() 側は画像があるつもりで処理を続行できる
-            graphics.generateTexture(file.key, 32, 32);
-
-            // 使い終わったグラフィックオブジェクトは破棄
-            graphics.destroy();
+            // We will generate textures in create() to ensure specific shapes
+            console.warn(`Details: ${file.key} failed to load.`);
         });
     }
 
     create() {
-        // --- 1. プレイヤーの作成 ---
-        this.player = this.physics.add.sprite(
-            this.cameras.main.width / 2,
-            this.cameras.main.height / 2,
-            ASSETS.PLAYER.key
-        );
+        this.createGameTextures();
 
-        // 【重要】どんな画像が来てもこのサイズに強制変換（配信ネタ画像対策）
-        this.player.setDisplaySize(32, 32);
+        // Background
+        this.cameras.main.setBackgroundColor('#e0e0e0'); // Light Gray
+        const worldWidth = 2000;
+        const worldHeight = 2000;
+        this.add.tileSprite(worldWidth / 2, worldHeight / 2, worldWidth, worldHeight, 'background_grid');
 
-        // 【重要】当たり判定は画像サイズに依存させず、少し小さめの円にする
-        // （画像が長方形でも、当たり判定は中心の円になるので理不尽な当たり方をしない）
-        this.player.setCircle(12);
-        this.player.setOffset(4, 4); // 画像の中心と当たり判定の中心を合わせる調整
+        // Launch UI Scene
+        this.scene.launch('UIScene');
+        this.scene.bringToTop('UIScene');
 
-        this.player.setCollideWorldBounds(true);
+        // Groups
+        this.enemies = this.physics.add.group({
+            classType: Enemy,
+            runChildUpdate: true
+        });
 
-        // --- 2. カメラの設定 ---
+        this.projectiles = this.physics.add.group({
+            classType: Projectile,
+            runChildUpdate: true
+        });
+
+        this.expGems = this.physics.add.group({
+            classType: ExpGem,
+            runChildUpdate: true
+        });
+
+        // Player
+        this.player = new Player(this, this.cameras.main.width / 2, this.cameras.main.height / 2, ASSETS.PLAYER.key);
+        this.add.existing(this.player);
+        this.player.setEnemies(this.enemies);
+        this.player.setProjectiles(this.projectiles);
+
+        // Camera
         this.cameras.main.startFollow(this.player);
-        this.cameras.main.setBounds(0, 0, 2000, 2000);
-        this.physics.world.setBounds(0, 0, 2000, 2000);
+        this.cameras.main.setBounds(0, 0, worldWidth, worldHeight);
+        this.physics.world.setBounds(0, 0, worldWidth, worldHeight);
 
-        // --- 3. 操作設定（キーボード） ---
-        if (this.input.keyboard) {
-            this.cursors = this.input.keyboard.createCursorKeys();
-        }
-
-        // --- 4. 操作設定（バーチャルジョイスティック） ---
-        // main.ts で登録したプラグインを取得して画面に表示
-        // スマホでアクセスしたときだけ表示する判定を入れても良いですが、
-        // 開発中はPCでもマウスで動作確認できるので常時表示しておきます
+        // Inputs
         const joyStickPlugin = this.plugins.get('rexVirtualJoystick') as any;
-
         if (joyStickPlugin) {
             this.joyStick = joyStickPlugin.add(this, {
-                x: 100, // 画面左下あたり
+                x: 100,
                 y: this.cameras.main.height - 100,
                 radius: 60,
                 base: { fill: 0x888888, alpha: 0.5 },
-                thumb: { fill: 0xcccccc, alpha: 0.8 },
-                // ジョイスティックがカメラについてくるように固定（ScrollFactor: 0）
+                thumb: { fill: 0xcccccc, alpha: 0.8 }
             });
-
-            // ここが魔法: ジョイスティックの動きをカーソルキー入力として変換する
             this.joyStickCursors = this.joyStick.createCursorKeys();
+        }
 
-            // ジョイスティック自体はUIなのでカメラと一緒に動くよう設定
-            // (rexVirtualJoystickの仕様上、作成後にsetScrollFactorが必要な場合があるため念の為)
-            // ※描画レイヤーの管理が必要になる場合もありますが、一旦このままで
+        if (this.joyStickCursors) {
+            this.player.setJoystick(this.joyStickCursors);
+        }
+
+        // Spawner
+        this.time.addEvent({
+            delay: 1000,
+            loop: true,
+            callback: this.spawnEnemy,
+            callbackScope: this
+        });
+
+        // Collisions
+        this.physics.add.collider(this.player, this.enemies, this.handlePlayerEnemyCollision, undefined, this);
+        this.physics.add.overlap(this.projectiles, this.enemies, this.handleProjectileEnemyCollision, undefined, this);
+        this.physics.add.overlap(this.player, this.expGems, this.handlePlayerGemCollision, undefined, this);
+
+        // Events
+        this.events.on('levelUp', this.onLevelUp, this);
+        this.events.on('selectUpgrade', this.onSelectUpgrade, this);
+    }
+
+    update(time: number, delta: number) {
+        if (this.isPaused) return;
+
+        if (this.player) {
+            this.player.update(time, delta);
+        }
+
+        // Magnet logic for gems
+        this.expGems.getChildren().forEach((child) => {
+            const gem = child as ExpGem;
+            if (gem.active && this.player.body && gem.body) {
+                if (Phaser.Math.Distance.Between(this.player.x, this.player.y, gem.x, gem.y) < 150) {
+                    gem.startMagnet();
+                    gem.setTarget(this.player);
+                }
+            }
+        });
+    }
+
+    private spawnEnemy() {
+        if (this.isPaused) return;
+
+        const distance = 400;
+        const angle = Phaser.Math.Between(0, 360);
+        const x = this.player.x + distance * Math.cos(Phaser.Math.DegToRad(angle));
+        const y = this.player.y + distance * Math.sin(Phaser.Math.DegToRad(angle));
+
+        const clampX = Phaser.Math.Clamp(x, 0, 2000);
+        const clampY = Phaser.Math.Clamp(y, 0, 2000);
+
+        const enemy = this.enemies.get(clampX, clampY, ASSETS.ENEMY_BAT.key) as Enemy;
+        if (enemy) {
+            enemy.setActive(true);
+            enemy.setVisible(true);
+            enemy.setTarget(this.player);
+            if (enemy.body) {
+                enemy.body.enable = true;
+            }
         }
     }
 
-    update() {
-        // プレイヤーの速度をリセット
-        const speed = 200;
-        const body = this.player.body as Phaser.Physics.Arcade.Body;
-        body.setVelocity(0);
+    private handlePlayerEnemyCollision(obj1: any, obj2: any) {
+        const enemy = obj2 as Enemy;
+        this.player.takeDamage(10);
+        // Simple bounce back
+        const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.x, enemy.y);
+        const bounceDistance = 50;
+        enemy.x += Math.cos(angle) * bounceDistance;
+        enemy.y += Math.sin(angle) * bounceDistance;
+    }
 
-        // 入力がない場合は何もしない
-        if (!this.cursors && !this.joyStickCursors) return;
+    private handleProjectileEnemyCollision(obj1: any, obj2: any) {
+        const projectile = obj1 as Projectile;
+        const enemy = obj2 as Enemy;
 
-        // --- キーボードとジョイスティックの入力を統合 ---
-        // 「キーボードが押されている」または「ジョイスティックが倒されている」
-        const left = this.cursors.left.isDown || (this.joyStickCursors && this.joyStickCursors.left.isDown);
-        const right = this.cursors.right.isDown || (this.joyStickCursors && this.joyStickCursors.right.isDown);
-        const up = this.cursors.up.isDown || (this.joyStickCursors && this.joyStickCursors.up.isDown);
-        const down = this.cursors.down.isDown || (this.joyStickCursors && this.joyStickCursors.down.isDown);
+        projectile.setActive(false);
+        projectile.setVisible(false);
 
-        // X軸の移動
-        if (left) {
-            body.setVelocityX(-speed);
-            this.player.flipX = true; // 左向きに反転（お好みで）
-        } else if (right) {
-            body.setVelocityX(speed);
-            this.player.flipX = false;
+        // Spawn Gem
+        const gem = this.expGems.get(enemy.x, enemy.y, ASSETS.EXP_GEM.key) as ExpGem;
+        if (gem) {
+            gem.setActive(true);
+            gem.setVisible(true);
+            // gem.body!.enable = true; // Auto handled by group usually
         }
 
-        // Y軸の移動
-        if (up) {
-            body.setVelocityY(-speed);
-        } else if (down) {
-            body.setVelocityY(speed);
+        // Destroy Enemy
+        enemy.setActive(false);
+        enemy.setVisible(false);
+        enemy.body!.enable = false;
+
+        // Update Score
+        this.events.emit('updateScore', this.expGems.countActive(false)); // Just a dummy score logic for now
+    }
+
+    private handlePlayerGemCollision(obj1: any, obj2: any) {
+        const gem = obj2 as ExpGem;
+        gem.setActive(false);
+        gem.setVisible(false);
+        if (gem.body) gem.body.enable = false;
+
+        if (this.player && typeof this.player.gainExp === 'function') {
+            try {
+                this.player.gainExp(10);
+            } catch (e) {
+                console.error("Error in player.gainExp:", e);
+            }
+        }
+    }
+
+    private onLevelUp() {
+        this.isPaused = true;
+        this.physics.pause();
+    }
+
+    private onSelectUpgrade(type: string) {
+        this.player.upgradeStat(type);
+        this.isPaused = false;
+        this.physics.resume();
+    }
+
+    private createGameTextures() {
+        const graphics = this.make.graphics({ x: 0, y: 0 });
+
+        // BACKGROUND GRID TILE
+        // Always Force Regeneration
+        if (this.textures.exists('background_grid')) this.textures.remove('background_grid');
+
+        graphics.clear();
+        graphics.fillStyle(0xE0E0E0); // Light Gray Base
+        graphics.fillRect(0, 0, 128, 128);
+
+        // Draw Cross
+        graphics.lineStyle(4, 0xAAAAAA); // Darker gray
+        // Horizontal
+        graphics.moveTo(54, 64);
+        graphics.lineTo(74, 64);
+        // Vertical
+        graphics.moveTo(64, 54);
+        graphics.lineTo(64, 74);
+
+        graphics.strokePath();
+
+        graphics.generateTexture('background_grid', 128, 128);
+        // IMPORTANT: Do NOT destroy graphics yet as we use it for other textures below, 
+        // OR clear it. The original code destroyed it at the END.
+        // We will clear it.
+
+        // Player: Cyan Circle
+        if (!this.textures.exists(ASSETS.PLAYER.key) || true) { // Force update
+            graphics.clear();
+            graphics.fillStyle(0x00FFFF); // Cyan
+            graphics.fillCircle(16, 16, 16);
+            graphics.lineStyle(2, 0xFFFFFF);
+            graphics.strokeCircle(16, 16, 16);
+            if (this.textures.exists(ASSETS.PLAYER.key)) this.textures.remove(ASSETS.PLAYER.key);
+            graphics.generateTexture(ASSETS.PLAYER.key, 32, 32);
         }
 
-        // 斜め移動時の速度補正（ピタゴラスの定理で速くなりすぎないように）
-        body.velocity.normalize().scale(speed);
+        // ENEMY: Red Square (Bat)
+        if (!this.textures.exists(ASSETS.ENEMY_BAT.key) || true) {
+            graphics.clear();
+            graphics.fillStyle(0xFF0000); // Red
+            graphics.fillRect(0, 0, 32, 32);
+            graphics.lineStyle(2, 0x880000);
+            graphics.strokeRect(0, 0, 32, 32);
+            if (this.textures.exists(ASSETS.ENEMY_BAT.key)) this.textures.remove(ASSETS.ENEMY_BAT.key);
+            graphics.generateTexture(ASSETS.ENEMY_BAT.key, 32, 32);
+        }
+
+        // PROJECTILE: Yellow Circle (Bullet)
+        if (!this.textures.exists(ASSETS.BULLET.key) || true) {
+            graphics.clear();
+            graphics.fillStyle(0xFFFF00); // Yellow
+            graphics.fillCircle(8, 8, 8);
+            if (this.textures.exists(ASSETS.BULLET.key)) this.textures.remove(ASSETS.BULLET.key);
+            graphics.generateTexture(ASSETS.BULLET.key, 16, 16);
+        }
+
+        // EXP GEM: 4-Pointed Star (Greenish/Yellow)
+        if (!this.textures.exists(ASSETS.EXP_GEM.key) || true) {
+            graphics.clear();
+            graphics.fillStyle(0x00FF00); // Green
+
+            const size = 32;
+            const half = size / 2;
+            const inner = 6;
+
+            graphics.beginPath();
+            graphics.moveTo(half, 0);
+            graphics.lineTo(half + inner, half - inner);
+            graphics.lineTo(size, half);
+            graphics.lineTo(half + inner, half + inner);
+            graphics.lineTo(half, size);
+            graphics.lineTo(half - inner, half + inner);
+            graphics.lineTo(0, half);
+            graphics.lineTo(half - inner, half - inner);
+            graphics.closePath();
+            graphics.fillPath();
+
+            graphics.lineStyle(2, 0xFFFFFF);
+            graphics.strokePath();
+
+            if (this.textures.exists(ASSETS.EXP_GEM.key)) this.textures.remove(ASSETS.EXP_GEM.key);
+            graphics.generateTexture(ASSETS.EXP_GEM.key, 32, 32);
+        }
+
+        graphics.destroy();
     }
 }
