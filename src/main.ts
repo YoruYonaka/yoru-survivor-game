@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
 import GameScene from './scenes/GameScene';
 
+// @ts-ignore
+import VirtualJoystickPlugin from 'phaser3-rex-plugins/plugins/virtualjoystick-plugin.js';
+
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   width: 1280, // 配信向けに少し広め
