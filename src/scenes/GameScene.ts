@@ -36,6 +36,7 @@ export default class GameScene extends Phaser.Scene {
     private joyStick?: VirtualJoystick;
 
     private isPaused: boolean = false;
+    private isPowerUpSelection: boolean = false;
 
     constructor() {
         super('GameScene');
@@ -54,6 +55,7 @@ export default class GameScene extends Phaser.Scene {
 
     create() {
         this.isPaused = false;
+        this.isPowerUpSelection = false;
         this.killCount = 0;
         this.createGameTextures();
 
@@ -66,6 +68,10 @@ export default class GameScene extends Phaser.Scene {
         // Launch UI Scene
         this.scene.launch('UIScene');
         this.scene.bringToTop('UIScene');
+
+        this.events.on('requestPause', this.onPauseRequested, this);
+        this.events.on('requestResume', this.onResumeRequested, this);
+        this.events.on('requestExitToTitle', this.onExitToTitleRequested, this);
 
         // Groups
         this.enemies = this.physics.add.group({
@@ -130,7 +136,6 @@ export default class GameScene extends Phaser.Scene {
 
         // Events
         this.events.on('levelUp', this.onLevelUp, this);
-        this.events.on('selectUpgrade', this.onSelectUpgrade, this);
         this.events.on('playerDead', this.onGameOver, this);
     }
 
@@ -221,26 +226,71 @@ export default class GameScene extends Phaser.Scene {
     }
 
     private onLevelUp() {
-        this.isPaused = true;
-        this.physics.pause();
-    }
-
-    private onSelectUpgrade(type: string) {
-        this.player.upgradeStat(type);
-        this.isPaused = false;
-        this.physics.resume();
+        if (this.isPaused) return;
+        this.isPowerUpSelection = true;
+        this.pauseGame(true);
+        this.scene.launch('PowerUpScene', {
+            onSelectUpgrade: (type: 'attack' | 'speed' | 'heal') => this.handlePowerUpSelection(type),
+            onReturnToTitle: () => this.exitToTitle(),
+        });
     }
 
     private onGameOver() {
         if (this.isPaused) return;
-        this.isPaused = true;
-        this.physics.pause();
+        this.pauseGame();
         this.scene.stop('UIScene');
 
         const coinsEarned = this.killCount;
         this.dataManager.addCoins(coinsEarned);
 
         this.scene.start('TitleScene', { coinsEarned, killCount: this.killCount });
+    }
+
+    private onPauseRequested() {
+        this.pauseGame();
+    }
+
+    private onResumeRequested() {
+        if (!this.isPowerUpSelection) {
+            this.resumeGame();
+        }
+    }
+
+    private onExitToTitleRequested() {
+        this.exitToTitle();
+    }
+
+    private handlePowerUpSelection(type: 'attack' | 'speed' | 'heal') {
+        this.player.upgradeStat(type);
+        this.scene.stop('PowerUpScene');
+        this.scene.resume('UIScene');
+        this.isPowerUpSelection = false;
+        this.resumeGame();
+    }
+
+    private pauseGame(pauseUIScene: boolean = false) {
+        if (this.isPaused) return;
+        this.isPaused = true;
+        this.physics.pause();
+        this.time.paused = true;
+        if (pauseUIScene) {
+            this.scene.pause('UIScene');
+        }
+        this.events.emit('pauseStateChanged', true);
+    }
+
+    private resumeGame() {
+        if (!this.isPaused) return;
+        this.isPaused = false;
+        this.physics.resume();
+        this.time.paused = false;
+        this.events.emit('pauseStateChanged', false);
+    }
+
+    private exitToTitle() {
+        this.scene.stop('PowerUpScene');
+        this.scene.stop('UIScene');
+        this.scene.start('TitleScene');
     }
 
     private createGameTextures() {
