@@ -1,5 +1,13 @@
 import Phaser from 'phaser';
 
+type UpgradeType = 'attack' | 'speed' | 'heal';
+
+type UpgradeOption = {
+    type: UpgradeType;
+    title: string;
+    description: string;
+};
+
 export default class UIScene extends Phaser.Scene {
     private hpBar!: Phaser.GameObjects.Graphics;
     private expBar!: Phaser.GameObjects.Graphics;
@@ -14,6 +22,13 @@ export default class UIScene extends Phaser.Scene {
     private _level: number = 1;
     private _score: number = 0;
     private _time: number = 0;
+    private levelUpContainer?: Phaser.GameObjects.Container;
+
+    private upgradePool: UpgradeOption[] = [
+        { type: 'attack', title: 'ATTACK SPEED UP', description: 'Shoot faster at foes' },
+        { type: 'speed', title: 'MOVEMENT SPEED UP', description: 'Move like the wind' },
+        { type: 'heal', title: 'HEAL HP', description: 'Restore 20 HP instantly' }
+    ];
 
     constructor() {
         super('UIScene');
@@ -171,10 +186,14 @@ export default class UIScene extends Phaser.Scene {
     }
 
     private onLevelUp() {
+        if (this.levelUpContainer) {
+            this.levelUpContainer.destroy();
+        }
+
         const width = this.cameras.main.width;
         const height = this.cameras.main.height;
 
-        const container = this.add.container(width / 2, height / 2);
+        this.levelUpContainer = this.add.container(width / 2, height / 2);
 
         // Overlay Background
         const bg = this.add.rectangle(0, 0, 500, 400, 0x000000, 0.9);
@@ -188,31 +207,31 @@ export default class UIScene extends Phaser.Scene {
             strokeThickness: 6
         }).setOrigin(0.5);
 
-        const btn1 = this.createUpgradeButton(0, -50, 'ATTACK SPEED UP', 'Increases attack rate', () => {
-            this.confirmUpgrade(container, 'attack');
-        });
+        const options = this.pickUpgradeOptions();
+        const buttons = options.map((option, index) =>
+            this.createUpgradeButton(0, -50 + 80 * index, option, () => {
+                this.confirmUpgrade(this.levelUpContainer as Phaser.GameObjects.Container, option.type);
+            })
+        );
 
-        const btn2 = this.createUpgradeButton(0, 30, 'MOVEMENT SPEED UP', 'Increases move speed', () => {
-            this.confirmUpgrade(container, 'speed');
-        });
-
-        const btn3 = this.createUpgradeButton(0, 110, 'HEAL HP', 'Restores 20 HP', () => {
-            this.confirmUpgrade(container, 'heal');
-        });
-
-        container.add([bg, title, btn1, btn2, btn3]);
+        this.levelUpContainer.add([bg, title, ...buttons]);
 
         // Simple entrance animation
-        container.setScale(0);
+        this.levelUpContainer.setScale(0);
         this.tweens.add({
-            targets: container,
+            targets: this.levelUpContainer,
             scale: 1,
             duration: 300,
             ease: 'Back.out'
         });
     }
 
-    private createUpgradeButton(x: number, y: number, text: string, subText: string, onClick: () => void) {
+    private pickUpgradeOptions(): UpgradeOption[] {
+        const shuffled = Phaser.Utils.Array.Shuffle([...this.upgradePool]);
+        return shuffled.slice(0, 3);
+    }
+
+    private createUpgradeButton(x: number, y: number, option: UpgradeOption, onClick: () => void) {
         const btn = this.add.container(x, y);
 
         const width = 400;
@@ -221,13 +240,13 @@ export default class UIScene extends Phaser.Scene {
         const bg = this.add.rectangle(0, 0, width, height, 0x222222).setInteractive();
         bg.setStrokeStyle(2, 0x666666);
 
-        const label = this.add.text(0, -10, text, {
+        const label = this.add.text(0, -10, option.title, {
             fontSize: '24px',
             fontFamily: 'Impact',
             color: '#FFFFFF'
         }).setOrigin(0.5);
 
-        const subLabel = this.add.text(0, 15, subText, {
+        const subLabel = this.add.text(0, 15, option.description, {
             fontSize: '16px',
             fontFamily: 'Arial',
             color: '#AAAAAA'
@@ -252,7 +271,7 @@ export default class UIScene extends Phaser.Scene {
         return btn;
     }
 
-    private confirmUpgrade(container: Phaser.GameObjects.Container, type: string) {
+    private confirmUpgrade(container: Phaser.GameObjects.Container, type: UpgradeType) {
         // Exit animation
         this.tweens.add({
             targets: container,
@@ -261,6 +280,7 @@ export default class UIScene extends Phaser.Scene {
             onComplete: () => {
                 this.scene.get('GameScene').events.emit('selectUpgrade', type);
                 container.destroy();
+                this.levelUpContainer = undefined;
             }
         });
     }

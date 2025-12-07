@@ -27,6 +27,7 @@ export default class GameScene extends Phaser.Scene {
     private enemies!: Phaser.Physics.Arcade.Group;
     private projectiles!: Phaser.Physics.Arcade.Group;
     private expGems!: Phaser.Physics.Arcade.Group;
+    private killCount: number = 0;
 
     private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
     private joyStickCursors?: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -84,6 +85,9 @@ export default class GameScene extends Phaser.Scene {
         this.player.setEnemies(this.enemies);
         this.player.setProjectiles(this.projectiles);
 
+        this.events.emit('updateHP', this.player.getHp(), this.player.getMaxHp());
+        this.events.emit('updateEXP', this.player.getExp(), this.player.getNextLevelExp(), this.player.getLevel());
+
         // Camera
         this.cameras.main.startFollow(this.player);
         this.cameras.main.setBounds(0, 0, worldWidth, worldHeight);
@@ -136,8 +140,7 @@ export default class GameScene extends Phaser.Scene {
             const gem = child as ExpGem;
             if (gem.active && this.player.body && gem.body) {
                 if (Phaser.Math.Distance.Between(this.player.x, this.player.y, gem.x, gem.y) < 150) {
-                    gem.startMagnet();
-                    gem.setTarget(this.player);
+                    gem.startMagnet(this.player);
                 }
             }
         });
@@ -184,7 +187,12 @@ export default class GameScene extends Phaser.Scene {
         if (gem) {
             gem.setActive(true);
             gem.setVisible(true);
-            // gem.body!.enable = true; // Auto handled by group usually
+            gem.resetState();
+            if (gem.body) {
+                const body = gem.body as Phaser.Physics.Arcade.Body;
+                body.enable = true;
+                body.setAllowGravity(false);
+            }
         }
 
         // Destroy Enemy
@@ -193,7 +201,8 @@ export default class GameScene extends Phaser.Scene {
         enemy.body!.enable = false;
 
         // Update Score
-        this.events.emit('updateScore', this.expGems.countActive(false)); // Just a dummy score logic for now
+        this.killCount += 1;
+        this.events.emit('updateScore', this.killCount);
     }
 
     private handlePlayerGemCollision(_player: Player, gem: ExpGem) {
@@ -201,12 +210,10 @@ export default class GameScene extends Phaser.Scene {
         gem.setVisible(false);
         if (gem.body) gem.body.enable = false;
 
+        gem.resetState(gem.getExpValue(), false);
+
         if (this.player && typeof this.player.gainExp === 'function') {
-            try {
-                this.player.gainExp(10);
-            } catch (e) {
-                console.error("Error in player.gainExp:", e);
-            }
+            this.player.gainExp(gem.getExpValue());
         }
     }
 
