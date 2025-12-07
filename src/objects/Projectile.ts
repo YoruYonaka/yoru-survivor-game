@@ -19,7 +19,9 @@ export default class Projectile extends Phaser.Physics.Arcade.Sprite {
         const angle = Phaser.Math.Angle.Between(x, y, targetX, targetY);
         this.setRotation(angle);
 
-        this.scene.physics.velocityFromRotation(angle, this.speed, this.body!.velocity);
+        if (this.body) {
+            this.scene.physics.velocityFromRotation(angle, this.speed, (this.body as Phaser.Physics.Arcade.Body).velocity);
+        }
 
         this.lifespan = 2000;
     }
@@ -31,7 +33,9 @@ export default class Projectile extends Phaser.Physics.Arcade.Sprite {
         if (this.lifespan <= 0) {
             this.setActive(false);
             this.setVisible(false);
-            this.body!.stop();
+            if (this.body) {
+                (this.body as Phaser.Physics.Arcade.Body).stop();
+            }
         }
     }
 }

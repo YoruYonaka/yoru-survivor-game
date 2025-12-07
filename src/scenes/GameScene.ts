@@ -6,6 +6,22 @@ import Projectile from '../objects/Projectile';
 import ExpGem from '../objects/ExpGem';
 import UIScene from './UIScene';
 
+interface VirtualJoystick {
+    createCursorKeys(): Phaser.Types.Input.Keyboard.CursorKeys;
+}
+
+interface VirtualJoystickConfig {
+    x: number;
+    y: number;
+    radius: number;
+    base: { fill: number; alpha: number };
+    thumb: { fill: number; alpha: number };
+}
+
+interface VirtualJoystickPlugin {
+    add(scene: Phaser.Scene, config: VirtualJoystickConfig): VirtualJoystick;
+}
+
 export default class GameScene extends Phaser.Scene {
     private player!: Player;
     private enemies!: Phaser.Physics.Arcade.Group;
@@ -14,7 +30,7 @@ export default class GameScene extends Phaser.Scene {
 
     private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
     private joyStickCursors?: Phaser.Types.Input.Keyboard.CursorKeys;
-    private joyStick!: any;
+    private joyStick?: VirtualJoystick;
 
     private isPaused: boolean = false;
 
@@ -74,7 +90,7 @@ export default class GameScene extends Phaser.Scene {
         this.physics.world.setBounds(0, 0, worldWidth, worldHeight);
 
         // Inputs
-        const joyStickPlugin = this.plugins.get('rexVirtualJoystick') as any;
+        const joyStickPlugin = this.plugins.get('rexVirtualJoystick') as VirtualJoystickPlugin | undefined;
         if (joyStickPlugin) {
             this.joyStick = joyStickPlugin.add(this, {
                 x: 100,
@@ -149,8 +165,7 @@ export default class GameScene extends Phaser.Scene {
         }
     }
 
-    private handlePlayerEnemyCollision(obj1: any, obj2: any) {
-        const enemy = obj2 as Enemy;
+    private handlePlayerEnemyCollision(_player: Player, enemy: Enemy) {
         this.player.takeDamage(10);
         // Simple bounce back
         const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.x, enemy.y);
@@ -159,9 +174,7 @@ export default class GameScene extends Phaser.Scene {
         enemy.y += Math.sin(angle) * bounceDistance;
     }
 
-    private handleProjectileEnemyCollision(obj1: any, obj2: any) {
-        const projectile = obj1 as Projectile;
-        const enemy = obj2 as Enemy;
+    private handleProjectileEnemyCollision(projectile: Projectile, enemy: Enemy) {
 
         projectile.setActive(false);
         projectile.setVisible(false);
@@ -183,8 +196,7 @@ export default class GameScene extends Phaser.Scene {
         this.events.emit('updateScore', this.expGems.countActive(false)); // Just a dummy score logic for now
     }
 
-    private handlePlayerGemCollision(obj1: any, obj2: any) {
-        const gem = obj2 as ExpGem;
+    private handlePlayerGemCollision(_player: Player, gem: ExpGem) {
         gem.setActive(false);
         gem.setVisible(false);
         if (gem.body) gem.body.enable = false;
