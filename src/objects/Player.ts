@@ -1,5 +1,13 @@
 import Phaser from 'phaser';
 import Projectile from './Projectile';
+import { ASSETS } from '../AssetManifest';
+
+type WASDKeys = {
+    up: Phaser.Input.Keyboard.Key;
+    down: Phaser.Input.Keyboard.Key;
+    left: Phaser.Input.Keyboard.Key;
+    right: Phaser.Input.Keyboard.Key;
+};
 
 export default class Player extends Phaser.Physics.Arcade.Sprite {
     private speed: number = 200;
@@ -17,7 +25,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     private enemies!: Phaser.Physics.Arcade.Group;
 
     private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
-    private wasd?: any;
+    private wasd?: WASDKeys;
     private joyStickCursors?: Phaser.Types.Input.Keyboard.CursorKeys;
 
     constructor(scene: Phaser.Scene, x: number, y: number, texture: string) {
@@ -38,7 +46,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
                 down: Phaser.Input.Keyboard.KeyCodes.S,
                 left: Phaser.Input.Keyboard.KeyCodes.A,
                 right: Phaser.Input.Keyboard.KeyCodes.D
-            });
+            }) as unknown as WASDKeys;
         }
     }
 
@@ -71,15 +79,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         const upArrow = this.cursors?.up.isDown || false;
         const downArrow = this.cursors?.down.isDown || false;
 
-        // Check WASD keys
-        // Note: this.wasd might be undefined if addKeys failed or not initialized
-        // But we initialized it in constructor.
-        // Also casting to any to access dynamic properties safely
-        const keys = this.wasd as any;
-        const leftWASD = keys?.left?.isDown || false;
-        const rightWASD = keys?.right?.isDown || false;
-        const upWASD = keys?.up?.isDown || false;
-        const downWASD = keys?.down?.isDown || false;
+        const leftWASD = this.wasd?.left.isDown || false;
+        const rightWASD = this.wasd?.right.isDown || false;
+        const upWASD = this.wasd?.up.isDown || false;
+        const downWASD = this.wasd?.down.isDown || false;
 
         // Check Joystick
         const leftJoy = this.joyStickCursors?.left.isDown || false;
@@ -138,9 +141,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
         if (nearestEnemy) {
             // Get a projectile from the group
-            const projectile = this.projectiles.get(this.x, this.y, 'bullet') as Projectile;
-            if (projectile) {
-                projectile.fire(this.x, this.y, (nearestEnemy as any).x, (nearestEnemy as any).y);
+            const projectile = this.projectiles.get(this.x, this.y, ASSETS.BULLET.key) as Projectile | null;
+            if (projectile instanceof Projectile) {
+                projectile.fire(this.x, this.y, nearestEnemy.x, nearestEnemy.y);
             }
         }
     }
