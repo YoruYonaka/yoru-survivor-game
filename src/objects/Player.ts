@@ -149,7 +149,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     gainExp(amount: number) {
-        console.log(`gainExp called: ${amount}, current: ${this.exp}`);
         this.exp += amount;
 
         // Emit event to UI
@@ -203,5 +202,25 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             this.scene.physics.pause();
             console.log("GAME OVER");
         }
+    }
+
+    getHp(): number {
+        return this.hp;
+    }
+
+    getMaxHp(): number {
+        return this.maxHp;
+    }
+
+    getExp(): number {
+        return this.exp;
+    }
+
+    getNextLevelExp(): number {
+        return this.nextLevelExp;
+    }
+
+    getLevel(): number {
+        return this.level;
     }
 }
