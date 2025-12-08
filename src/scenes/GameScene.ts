@@ -37,6 +37,7 @@ export default class GameScene extends Phaser.Scene {
 
     private isPaused: boolean = false;
     private isPowerUpSelection: boolean = false;
+    private isGameplayHiddenForPowerUp: boolean = false;
 
     constructor() {
         super('GameScene');
@@ -229,6 +230,7 @@ export default class GameScene extends Phaser.Scene {
         if (this.isPaused) return;
         this.isPowerUpSelection = true;
         this.pauseGame(true);
+        this.hideGameplayForPowerUp();
         this.scene.launch('PowerUpScene', {
             onSelectUpgrade: (type: 'attack' | 'speed' | 'heal') => this.handlePowerUpSelection(type),
             onReturnToTitle: () => this.exitToTitle(),
@@ -265,6 +267,7 @@ export default class GameScene extends Phaser.Scene {
         this.scene.stop('PowerUpScene');
         this.scene.resume('UIScene');
         this.isPowerUpSelection = false;
+        this.restoreGameplayVisibility();
         this.resumeGame();
     }
 
@@ -290,7 +293,23 @@ export default class GameScene extends Phaser.Scene {
     private exitToTitle() {
         this.scene.stop('PowerUpScene');
         this.scene.stop('UIScene');
+        this.restoreGameplayVisibility();
         this.scene.start('TitleScene');
+    }
+
+    private hideGameplayForPowerUp() {
+        this.isGameplayHiddenForPowerUp = true;
+        this.cameras.main.setVisible(false);
+        const uiScene = this.scene.get('UIScene') as Phaser.Scene | undefined;
+        uiScene?.cameras?.main?.setVisible(false);
+    }
+
+    private restoreGameplayVisibility() {
+        if (!this.isGameplayHiddenForPowerUp) return;
+        this.isGameplayHiddenForPowerUp = false;
+        this.cameras.main.setVisible(true);
+        const uiScene = this.scene.get('UIScene') as Phaser.Scene | undefined;
+        uiScene?.cameras?.main?.setVisible(true);
     }
 
     private createGameTextures() {
