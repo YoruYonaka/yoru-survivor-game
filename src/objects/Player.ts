@@ -29,6 +29,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
     private wasd?: WASDKeys;
     private joyStickCursors?: Phaser.Types.Input.Keyboard.CursorKeys;
+    private damageTween?: Phaser.Tweens.Tween;
 
     constructor(scene: Phaser.Scene, x: number, y: number, texture: string, metaStats: PlayerMetaStats) {
         super(scene, x, y, texture);
@@ -213,6 +214,30 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             }
             this.scene.events.emit('playerDead');
         }
+    }
+
+    playDamageFeedback(camera: Phaser.Cameras.Scene2D.Camera) {
+        if (!this.active) return;
+
+        camera.shake(200, 0.004);
+        this.setTintFill(0xffcccc);
+
+        if (this.damageTween) {
+            this.damageTween.stop();
+        }
+
+        this.damageTween = this.scene.tweens.add({
+            targets: this,
+            alpha: 0.4,
+            duration: 80,
+            yoyo: true,
+            repeat: 2,
+            ease: 'Sine.easeInOut',
+            onComplete: () => {
+                this.setAlpha(1);
+                this.clearTint();
+            }
+        });
     }
 
     getHp(): number {
