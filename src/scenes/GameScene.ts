@@ -6,6 +6,7 @@ import Projectile from '../objects/Projectile';
 import ExpGem from '../objects/ExpGem';
 import UIScene from './UIScene';
 import DataManager from '../utils/DataManager';
+import type { RunUpgradeType } from './PowerUpScene';
 
 interface VirtualJoystick {
     createCursorKeys(): Phaser.Types.Input.Keyboard.CursorKeys;
@@ -232,7 +233,8 @@ export default class GameScene extends Phaser.Scene {
         this.pauseGame(true);
         this.hideGameplayForPowerUp();
         this.scene.launch('PowerUpScene', {
-            onSelectUpgrade: (type: 'attack' | 'speed' | 'heal') => this.handlePowerUpSelection(type),
+            mode: 'levelUp',
+            onSelectUpgrade: (type: RunUpgradeType) => this.handlePowerUpSelection(type),
             onReturnToTitle: () => this.exitToTitle(),
         });
         this.scene.bringToTop('PowerUpScene');
@@ -263,7 +265,7 @@ export default class GameScene extends Phaser.Scene {
         this.exitToTitle();
     }
 
-    private handlePowerUpSelection(type: 'attack' | 'speed' | 'heal') {
+    private handlePowerUpSelection(type: RunUpgradeType) {
         this.player.upgradeStat(type);
         this.scene.stop('PowerUpScene');
         this.scene.resume('UIScene');
