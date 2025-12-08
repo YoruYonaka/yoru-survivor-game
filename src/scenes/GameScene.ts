@@ -6,6 +6,7 @@ import Projectile from '../objects/Projectile';
 import ExpGem from '../objects/ExpGem';
 import UIScene from './UIScene';
 import DataManager from '../utils/DataManager';
+import type { RunUpgradeType } from './PowerUpScene';
 
 interface VirtualJoystick {
     createCursorKeys(): Phaser.Types.Input.Keyboard.CursorKeys;
@@ -55,9 +56,23 @@ export default class GameScene extends Phaser.Scene {
     }
 
     create() {
+        // Reset state every time the scene starts so re-entries from the title work correctly
         this.isPaused = false;
         this.isPowerUpSelection = false;
+        this.isGameplayHiddenForPowerUp = false;
         this.killCount = 0;
+
+        // Clean up any lingering listeners from previous runs
+        this.events.off('requestPause', this.onPauseRequested, this);
+        this.events.off('requestResume', this.onResumeRequested, this);
+        this.events.off('requestExitToTitle', this.onExitToTitleRequested, this);
+        this.events.off('levelUp', this.onLevelUp, this);
+        this.events.off('playerDead', this.onGameOver, this);
+
+        // Ensure core systems start unpaused on fresh entries
+        this.physics.resume();
+        this.time.paused = false;
+
         this.createGameTextures();
 
         // Background
@@ -232,7 +247,8 @@ export default class GameScene extends Phaser.Scene {
         this.pauseGame(true);
         this.hideGameplayForPowerUp();
         this.scene.launch('PowerUpScene', {
-            onSelectUpgrade: (type: 'attack' | 'speed' | 'heal') => this.handlePowerUpSelection(type),
+            mode: 'levelUp',
+            onSelectUpgrade: (type: RunUpgradeType) => this.handlePowerUpSelection(type),
             onReturnToTitle: () => this.exitToTitle(),
         });
         this.scene.bringToTop('PowerUpScene');
@@ -263,7 +279,7 @@ export default class GameScene extends Phaser.Scene {
         this.exitToTitle();
     }
 
-    private handlePowerUpSelection(type: 'attack' | 'speed' | 'heal') {
+    private handlePowerUpSelection(type: RunUpgradeType) {
         this.player.upgradeStat(type);
         this.scene.stop('PowerUpScene');
         this.scene.resume('UIScene');

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import DataManager, { type SaveData, type UpgradeType } from '../utils/DataManager';
+import DataManager from '../utils/DataManager';
 
 interface TitleSceneData {
     coinsEarned?: number;
@@ -21,8 +21,7 @@ export default class TitleScene extends Phaser.Scene {
             .setOrigin(0);
 
         this.createTitleLogo();
-        this.createStartButton();
-        this.createUpgradePanel();
+        this.createNavigationButtons();
         this.createCoinDisplay();
         this.createResultToast(data);
     }
@@ -51,132 +50,70 @@ export default class TitleScene extends Phaser.Scene {
         }).setOrigin(0.5);
     }
 
-    private createStartButton() {
+    private createNavigationButtons() {
         const width = this.cameras.main.width;
-        const startContainer = this.add.container(width / 2, 260);
+        const buttons = this.add.container(width / 2, 260);
 
-        const buttonBg = this.add.rectangle(0, 0, 260, 64, 0x1d4ed8, 0.9).setInteractive({ useHandCursor: true });
+        const startBtn = this.createPrimaryButton(0, 0, 'START RUN', () => {
+            this.scene.start('GameScene');
+        });
+
+        const powerUpBtn = this.createSecondaryButton(0, 100, 'POWER UP MENU', () => {
+            this.scene.start('PowerUpScene', { mode: 'meta' });
+        });
+
+        buttons.add([startBtn, powerUpBtn]);
+    }
+
+    private createPrimaryButton(x: number, y: number, label: string, onClick: () => void) {
+        const container = this.add.container(x, y);
+        const buttonBg = this.add.rectangle(0, 0, 280, 68, 0x1d4ed8, 0.95).setInteractive({ useHandCursor: true });
         buttonBg.setStrokeStyle(3, 0x60a5fa);
 
-        const label = this.add.text(0, 0, 'START RUN', {
-            fontSize: '28px',
+        const text = this.add.text(0, 0, label, {
+            fontSize: '30px',
             fontFamily: 'Impact, Arial Black',
             color: '#e0f2fe'
         }).setOrigin(0.5);
 
         buttonBg.on('pointerover', () => {
             buttonBg.setFillStyle(0x2563eb, 1);
-            buttonBg.setStrokeStyle(3, 0x93c5fd);
-            label.setColor('#ffffff');
+            text.setColor('#ffffff');
         });
 
         buttonBg.on('pointerout', () => {
-            buttonBg.setFillStyle(0x1d4ed8, 0.9);
-            buttonBg.setStrokeStyle(3, 0x60a5fa);
-            label.setColor('#e0f2fe');
+            buttonBg.setFillStyle(0x1d4ed8, 0.95);
+            text.setColor('#e0f2fe');
         });
 
-        buttonBg.on('pointerdown', () => {
-            this.scene.start('GameScene');
-            this.scene.stop('TitleScene');
-        });
-
-        startContainer.add([buttonBg, label]);
+        buttonBg.on('pointerdown', onClick);
+        container.add([buttonBg, text]);
+        return container;
     }
 
-    private createUpgradePanel() {
-        const width = this.cameras.main.width;
-        const panel = this.add.container(width / 2, 440);
-
-        const bg = this.add.rectangle(0, 0, 700, 260, 0x0f172a, 0.7);
-        bg.setStrokeStyle(2, 0x334155, 0.9);
-        bg.setDepth(-1);
-
-        const title = this.add.text(0, -110, 'POWER UP', {
-            fontSize: '32px',
-            fontFamily: 'Impact',
-            color: '#fbbf24',
-            stroke: '#b45309',
-            strokeThickness: 4
-        }).setOrigin(0.5);
-
-        const upgrades: { key: UpgradeType; title: string; detail: string }[] = [
-            { key: 'damage', title: 'Damage Amplifier', detail: '+5 DMG / Lv' },
-            { key: 'speed', title: 'Boots of Haste', detail: '+12 SPD / Lv' },
-            { key: 'maxHp', title: 'Crystal Heart', detail: '+20 HP / Lv' }
-        ];
-
-        const columnSpacing = 220;
-        upgrades.forEach((upgrade, index) => {
-            const xOffset = -columnSpacing + index * columnSpacing;
-            const card = this.createUpgradeCard(xOffset, 0, upgrade.key, upgrade.title, upgrade.detail);
-            panel.add(card);
-        });
-
-        panel.add([bg, title]);
-    }
-
-    private createUpgradeCard(x: number, y: number, type: UpgradeType, title: string, description: string) {
+    private createSecondaryButton(x: number, y: number, label: string, onClick: () => void) {
         const container = this.add.container(x, y);
-        const cardBg = this.add.rectangle(0, 0, 200, 180, 0x111827, 0.85).setInteractive({ useHandCursor: true });
-        cardBg.setStrokeStyle(2, 0x1f2937);
-        cardBg.setDepth(-1);
+        const bg = this.add.rectangle(0, 0, 260, 58, 0x1f2937, 0.9).setInteractive({ useHandCursor: true });
+        bg.setStrokeStyle(2, 0x38bdf8);
 
-        const label = this.add.text(0, -60, title, {
-            fontSize: '18px',
+        const text = this.add.text(0, 0, label, {
+            fontSize: '22px',
             fontFamily: 'Impact',
-            color: '#e5e7eb'
+            color: '#e2e8f0'
         }).setOrigin(0.5);
 
-        const desc = this.add.text(0, -30, description, {
-            fontSize: '14px',
-            fontFamily: 'Arial',
-            color: '#9ca3af'
-        }).setOrigin(0.5);
-
-        const levelText = this.add.text(0, 20, '', {
-            fontSize: '16px',
-            fontFamily: 'Arial Black',
-            color: '#34d399'
-        }).setOrigin(0.5);
-
-        const costLabel = this.add.text(0, 50, '', {
-            fontSize: '14px',
-            fontFamily: 'Arial',
-            color: '#fbbf24'
-        }).setOrigin(0.5);
-
-        const refreshCard = () => {
-            const save = this.dataManager.saveData;
-            const level = this.getUpgradeLevel(save, type);
-            const nextCost = this.getUpgradeCost(level);
-            levelText.setText(`Lv.${level}`);
-            costLabel.setText(`Cost: ${nextCost} C`);
-        };
-
-        cardBg.on('pointerover', () => {
-            cardBg.setStrokeStyle(2, 0x38bdf8);
+        bg.on('pointerover', () => {
+            bg.setFillStyle(0x273449, 0.95);
+            text.setColor('#ffffff');
         });
 
-        cardBg.on('pointerout', () => {
-            cardBg.setStrokeStyle(2, 0x1f2937);
+        bg.on('pointerout', () => {
+            bg.setFillStyle(0x1f2937, 0.9);
+            text.setColor('#e2e8f0');
         });
 
-        cardBg.on('pointerdown', () => {
-            const save = this.dataManager.saveData;
-            const level = this.getUpgradeLevel(save, type);
-            const cost = this.getUpgradeCost(level);
-            const success = this.dataManager.upgrade(type, cost);
-            if (success) {
-                this.refreshCoins();
-                refreshCard();
-            } else {
-                this.showToast('Not enough coins');
-            }
-        });
-
-        refreshCard();
-        container.add([cardBg, label, desc, levelText, costLabel]);
+        bg.on('pointerdown', onClick);
+        container.add([bg, text]);
         return container;
     }
 
@@ -230,21 +167,6 @@ export default class TitleScene extends Phaser.Scene {
             delay: 5000,
             onComplete: () => toast.destroy()
         });
-    }
-
-    private getUpgradeLevel(save: SaveData, type: UpgradeType): number {
-        switch (type) {
-            case 'damage':
-                return save.upgradeLevelDamage;
-            case 'speed':
-                return save.upgradeLevelSpeed;
-            case 'maxHp':
-                return save.upgradeLevelMaxHP;
-        }
-    }
-
-    private getUpgradeCost(level: number): number {
-        return 50 + level * 25;
     }
 
     private refreshCoins() {
