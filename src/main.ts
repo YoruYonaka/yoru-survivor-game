@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import GameScene from './scenes/GameScene';
 import UIScene from './scenes/UIScene';
+import TitleScene from './scenes/TitleScene';
+import PowerUpScene from './scenes/PowerUpScene';
 
 // @ts-ignore
 import VirtualJoystickPlugin from 'phaser3-rex-plugins/plugins/virtualjoystick-plugin.js';
@@ -17,7 +19,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false // 制作中はtrueにすると当たり判定が見えて便利
     },
   },
-  scene: [GameScene, UIScene], // ここにシーンを追加していく
+  scene: [TitleScene, GameScene, UIScene, PowerUpScene], // ここにシーンを追加していく
   pixelArt: true, // ドット絵が綺麗に見える設定
   scale: {
     mode: Phaser.Scale.FIT,

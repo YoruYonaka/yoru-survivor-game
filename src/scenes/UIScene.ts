@@ -1,13 +1,5 @@
 import Phaser from 'phaser';
 
-type UpgradeType = 'attack' | 'speed' | 'heal';
-
-type UpgradeOption = {
-    type: UpgradeType;
-    title: string;
-    description: string;
-};
-
 export default class UIScene extends Phaser.Scene {
     private hpBar!: Phaser.GameObjects.Graphics;
     private expBar!: Phaser.GameObjects.Graphics;
@@ -22,13 +14,8 @@ export default class UIScene extends Phaser.Scene {
     private _level: number = 1;
     private _score: number = 0;
     private _time: number = 0;
-    private levelUpContainer?: Phaser.GameObjects.Container;
-
-    private upgradePool: UpgradeOption[] = [
-        { type: 'attack', title: 'ATTACK SPEED UP', description: 'Shoot faster at foes' },
-        { type: 'speed', title: 'MOVEMENT SPEED UP', description: 'Move like the wind' },
-        { type: 'heal', title: 'HEAL HP', description: 'Restore 20 HP instantly' }
-    ];
+    private isGamePaused: boolean = false;
+    private pauseOverlay?: Phaser.GameObjects.Container;
 
     constructor() {
         super('UIScene');
@@ -37,13 +24,14 @@ export default class UIScene extends Phaser.Scene {
     create() {
         this.createExpBar();
         this.createHUD();
+        this.createPauseButton();
 
         // Listen to events from GameScene
         const gameScene = this.scene.get('GameScene');
         gameScene.events.on('updateHP', this.onUpdateHP, this);
         gameScene.events.on('updateEXP', this.onUpdateEXP, this);
-        gameScene.events.on('levelUp', this.onLevelUp, this);
         gameScene.events.on('updateScore', this.onUpdateScore, this);
+        gameScene.events.on('pauseStateChanged', this.onPauseStateChanged, this);
 
         // Initial updates
         this.updateHPBar();
@@ -113,6 +101,7 @@ export default class UIScene extends Phaser.Scene {
     }
 
     update(time: number, delta: number) {
+        if (this.isGamePaused) return;
         this._time += delta;
         const seconds = Math.floor(this._time / 1000);
         const minutes = Math.floor(seconds / 60);
@@ -185,103 +174,114 @@ export default class UIScene extends Phaser.Scene {
         if (this.scoreText) this.scoreText.setText(`KILLS: ${this._score}`);
     }
 
-    private onLevelUp() {
-        if (this.levelUpContainer) {
-            this.levelUpContainer.destroy();
-        }
+    private createPauseButton() {
+        const buttonContainer = this.add.container(300, 30);
+        buttonContainer.setScrollFactor(0);
 
-        const width = this.cameras.main.width;
-        const height = this.cameras.main.height;
+        const bg = this.add.rectangle(0, 0, 90, 36, 0x0f172a, 0.8).setInteractive({ useHandCursor: true });
+        bg.setStrokeStyle(2, 0x38bdf8);
 
-        this.levelUpContainer = this.add.container(width / 2, height / 2);
-
-        // Overlay Background
-        const bg = this.add.rectangle(0, 0, 500, 400, 0x000000, 0.9);
-        bg.setStrokeStyle(4, 0x00FFFF); // Cyan Border
-
-        const title = this.add.text(0, -150, 'LEVEL UP!', {
-            fontSize: '48px',
+        const label = this.add.text(0, 0, 'PAUSE', {
+            fontSize: '18px',
             fontFamily: 'Impact',
-            color: '#FFFF00',
-            stroke: '#FF9900',
-            strokeThickness: 6
+            color: '#e2e8f0'
         }).setOrigin(0.5);
 
-        const options = this.pickUpgradeOptions();
-        const buttons = options.map((option, index) =>
-            this.createUpgradeButton(0, -50 + 80 * index, option, () => {
-                this.confirmUpgrade(this.levelUpContainer as Phaser.GameObjects.Container, option.type);
-            })
-        );
-
-        this.levelUpContainer.add([bg, title, ...buttons]);
-
-        // Simple entrance animation
-        this.levelUpContainer.setScale(0);
-        this.tweens.add({
-            targets: this.levelUpContainer,
-            scale: 1,
-            duration: 300,
-            ease: 'Back.out'
-        });
-    }
-
-    private pickUpgradeOptions(): UpgradeOption[] {
-        const shuffled = Phaser.Utils.Array.Shuffle([...this.upgradePool]);
-        return shuffled.slice(0, 3);
-    }
-
-    private createUpgradeButton(x: number, y: number, option: UpgradeOption, onClick: () => void) {
-        const btn = this.add.container(x, y);
-
-        const width = 400;
-        const height = 70;
-
-        const bg = this.add.rectangle(0, 0, width, height, 0x222222).setInteractive();
-        bg.setStrokeStyle(2, 0x666666);
-
-        const label = this.add.text(0, -10, option.title, {
-            fontSize: '24px',
-            fontFamily: 'Impact',
-            color: '#FFFFFF'
-        }).setOrigin(0.5);
-
-        const subLabel = this.add.text(0, 15, option.description, {
-            fontSize: '16px',
-            fontFamily: 'Arial',
-            color: '#AAAAAA'
-        }).setOrigin(0.5);
-
-        // Hover Effects
         bg.on('pointerover', () => {
-            bg.setFillStyle(0x444444);
-            bg.setStrokeStyle(2, 0x00FF00); // Green border on hover
-            label.setColor('#00FF00');
+            bg.setFillStyle(0x1e293b, 0.95);
+            label.setColor('#ffffff');
         });
 
         bg.on('pointerout', () => {
-            bg.setFillStyle(0x222222);
-            bg.setStrokeStyle(2, 0x666666);
-            label.setColor('#FFFFFF');
+            bg.setFillStyle(0x0f172a, 0.8);
+            label.setColor('#e2e8f0');
+        });
+
+        bg.on('pointerdown', () => {
+            this.showPauseOverlay();
+            this.scene.get('GameScene').events.emit('requestPause');
+        });
+
+        buttonContainer.add([bg, label]);
+    }
+
+    private showPauseOverlay() {
+        if (!this.pauseOverlay) {
+            const width = this.cameras.main.width;
+            const height = this.cameras.main.height;
+            this.pauseOverlay = this.add.container(width / 2, height / 2);
+            this.pauseOverlay.setScrollFactor(0);
+
+            const dim = this.add.rectangle(0, 0, width, height, 0x0b1220, 0.85);
+            dim.setOrigin(0.5);
+
+            const panel = this.add.rectangle(0, 0, 420, 260, 0x0f172a, 0.95);
+            panel.setStrokeStyle(3, 0x38bdf8);
+
+            const title = this.add.text(0, -80, 'PAUSED', {
+                fontSize: '36px',
+                fontFamily: 'Impact',
+                color: '#38bdf8',
+                stroke: '#0ea5e9',
+                strokeThickness: 4
+            }).setOrigin(0.5);
+
+            const resumeBtn = this.createOverlayButton(0, 0, 'RESUME', () => {
+                this.hidePauseOverlay();
+                this.scene.get('GameScene').events.emit('requestResume');
+            });
+
+            const exitBtn = this.createOverlayButton(0, 70, 'RETURN TO TITLE', () => {
+                this.hidePauseOverlay();
+                this.scene.get('GameScene').events.emit('requestExitToTitle');
+            });
+
+            this.pauseOverlay.add([dim, panel, title, resumeBtn, exitBtn]);
+        }
+
+        this.pauseOverlay.setVisible(true);
+        this.isGamePaused = true;
+    }
+
+    private hidePauseOverlay() {
+        if (this.pauseOverlay) {
+            this.pauseOverlay.setVisible(false);
+        }
+        this.isGamePaused = false;
+    }
+
+    private createOverlayButton(x: number, y: number, label: string, onClick: () => void) {
+        const container = this.add.container(x, y);
+
+        const bg = this.add.rectangle(0, 0, 260, 48, 0x1f2937, 0.95).setInteractive({ useHandCursor: true });
+        bg.setStrokeStyle(2, 0x38bdf8);
+
+        const text = this.add.text(0, 0, label, {
+            fontSize: '20px',
+            fontFamily: 'Impact',
+            color: '#e2e8f0'
+        }).setOrigin(0.5);
+
+        bg.on('pointerover', () => {
+            bg.setFillStyle(0x273449, 0.95);
+            text.setColor('#ffffff');
+        });
+
+        bg.on('pointerout', () => {
+            bg.setFillStyle(0x1f2937, 0.95);
+            text.setColor('#e2e8f0');
         });
 
         bg.on('pointerdown', onClick);
 
-        btn.add([bg, label, subLabel]);
-        return btn;
+        container.add([bg, text]);
+        return container;
     }
 
-    private confirmUpgrade(container: Phaser.GameObjects.Container, type: UpgradeType) {
-        // Exit animation
-        this.tweens.add({
-            targets: container,
-            scale: 0,
-            duration: 200,
-            onComplete: () => {
-                this.scene.get('GameScene').events.emit('selectUpgrade', type);
-                container.destroy();
-                this.levelUpContainer = undefined;
-            }
-        });
+    private onPauseStateChanged(isPaused: boolean) {
+        this.isGamePaused = isPaused;
+        if (!isPaused && this.pauseOverlay && this.pauseOverlay.visible) {
+            this.hidePauseOverlay();
+        }
     }
 }

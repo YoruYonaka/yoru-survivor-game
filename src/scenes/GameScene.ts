@@ -5,6 +5,7 @@ import Enemy from '../objects/Enemy';
 import Projectile from '../objects/Projectile';
 import ExpGem from '../objects/ExpGem';
 import UIScene from './UIScene';
+import DataManager from '../utils/DataManager';
 
 interface VirtualJoystick {
     createCursorKeys(): Phaser.Types.Input.Keyboard.CursorKeys;
@@ -28,12 +29,15 @@ export default class GameScene extends Phaser.Scene {
     private projectiles!: Phaser.Physics.Arcade.Group;
     private expGems!: Phaser.Physics.Arcade.Group;
     private killCount: number = 0;
+    private readonly dataManager = DataManager.instance;
 
     private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
     private joyStickCursors?: Phaser.Types.Input.Keyboard.CursorKeys;
     private joyStick?: VirtualJoystick;
 
     private isPaused: boolean = false;
+    private isPowerUpSelection: boolean = false;
+    private isGameplayHiddenForPowerUp: boolean = false;
 
     constructor() {
         super('GameScene');
@@ -51,6 +55,9 @@ export default class GameScene extends Phaser.Scene {
     }
 
     create() {
+        this.isPaused = false;
+        this.isPowerUpSelection = false;
+        this.killCount = 0;
         this.createGameTextures();
 
         // Background
@@ -62,6 +69,10 @@ export default class GameScene extends Phaser.Scene {
         // Launch UI Scene
         this.scene.launch('UIScene');
         this.scene.bringToTop('UIScene');
+
+        this.events.on('requestPause', this.onPauseRequested, this);
+        this.events.on('requestResume', this.onResumeRequested, this);
+        this.events.on('requestExitToTitle', this.onExitToTitleRequested, this);
 
         // Groups
         this.enemies = this.physics.add.group({
@@ -80,7 +91,8 @@ export default class GameScene extends Phaser.Scene {
         });
 
         // Player
-        this.player = new Player(this, this.cameras.main.width / 2, this.cameras.main.height / 2, ASSETS.PLAYER.key);
+        const metaStats = this.dataManager.getPlayerMetaStats();
+        this.player = new Player(this, this.cameras.main.width / 2, this.cameras.main.height / 2, ASSETS.PLAYER.key, metaStats);
         this.add.existing(this.player);
         this.player.setEnemies(this.enemies);
         this.player.setProjectiles(this.projectiles);
@@ -125,7 +137,7 @@ export default class GameScene extends Phaser.Scene {
 
         // Events
         this.events.on('levelUp', this.onLevelUp, this);
-        this.events.on('selectUpgrade', this.onSelectUpgrade, this);
+        this.events.on('playerDead', this.onGameOver, this);
     }
 
     update(time: number, delta: number) {
@@ -159,12 +171,8 @@ export default class GameScene extends Phaser.Scene {
 
         const enemy = this.enemies.get(clampX, clampY, ASSETS.ENEMY_BAT.key) as Enemy;
         if (enemy) {
-            enemy.setActive(true);
-            enemy.setVisible(true);
+            enemy.resetState(80, 30);
             enemy.setTarget(this.player);
-            if (enemy.body) {
-                enemy.body.enable = true;
-            }
         }
     }
 
@@ -182,27 +190,28 @@ export default class GameScene extends Phaser.Scene {
         projectile.setActive(false);
         projectile.setVisible(false);
 
-        // Spawn Gem
-        const gem = this.expGems.get(enemy.x, enemy.y, ASSETS.EXP_GEM.key) as ExpGem;
-        if (gem) {
-            gem.setActive(true);
-            gem.setVisible(true);
-            gem.resetState();
-            if (gem.body) {
-                const body = gem.body as Phaser.Physics.Arcade.Body;
-                body.enable = true;
-                body.setAllowGravity(false);
+        const isDead = enemy.takeDamage(this.player.getDamage());
+
+        if (isDead) {
+            const gem = this.expGems.get(enemy.x, enemy.y, ASSETS.EXP_GEM.key) as ExpGem;
+            if (gem) {
+                gem.setActive(true);
+                gem.setVisible(true);
+                gem.resetState();
+                if (gem.body) {
+                    const body = gem.body as Phaser.Physics.Arcade.Body;
+                    body.enable = true;
+                    body.setAllowGravity(false);
+                }
             }
+
+            enemy.setActive(false);
+            enemy.setVisible(false);
+            enemy.body!.enable = false;
+
+            this.killCount += 1;
+            this.events.emit('updateScore', this.killCount);
         }
-
-        // Destroy Enemy
-        enemy.setActive(false);
-        enemy.setVisible(false);
-        enemy.body!.enable = false;
-
-        // Update Score
-        this.killCount += 1;
-        this.events.emit('updateScore', this.killCount);
     }
 
     private handlePlayerGemCollision(_player: Player, gem: ExpGem) {
@@ -218,14 +227,90 @@ export default class GameScene extends Phaser.Scene {
     }
 
     private onLevelUp() {
-        this.isPaused = true;
-        this.physics.pause();
+        if (this.isPaused) return;
+        this.isPowerUpSelection = true;
+        this.pauseGame(true);
+        this.hideGameplayForPowerUp();
+        this.scene.launch('PowerUpScene', {
+            onSelectUpgrade: (type: 'attack' | 'speed' | 'heal') => this.handlePowerUpSelection(type),
+            onReturnToTitle: () => this.exitToTitle(),
+        });
+        this.scene.bringToTop('PowerUpScene');
     }
 
-    private onSelectUpgrade(type: string) {
+    private onGameOver() {
+        if (this.isPaused) return;
+        this.pauseGame();
+        this.scene.stop('UIScene');
+
+        const coinsEarned = this.killCount;
+        this.dataManager.addCoins(coinsEarned);
+
+        this.scene.start('TitleScene', { coinsEarned, killCount: this.killCount });
+    }
+
+    private onPauseRequested() {
+        this.pauseGame();
+    }
+
+    private onResumeRequested() {
+        if (!this.isPowerUpSelection) {
+            this.resumeGame();
+        }
+    }
+
+    private onExitToTitleRequested() {
+        this.exitToTitle();
+    }
+
+    private handlePowerUpSelection(type: 'attack' | 'speed' | 'heal') {
         this.player.upgradeStat(type);
+        this.scene.stop('PowerUpScene');
+        this.scene.resume('UIScene');
+        this.isPowerUpSelection = false;
+        this.restoreGameplayVisibility();
+        this.resumeGame();
+    }
+
+    private pauseGame(pauseUIScene: boolean = false) {
+        if (this.isPaused) return;
+        this.isPaused = true;
+        this.physics.pause();
+        this.time.paused = true;
+        if (pauseUIScene) {
+            this.scene.pause('UIScene');
+        }
+        this.events.emit('pauseStateChanged', true);
+    }
+
+    private resumeGame() {
+        if (!this.isPaused) return;
         this.isPaused = false;
         this.physics.resume();
+        this.time.paused = false;
+        this.events.emit('pauseStateChanged', false);
+    }
+
+    private exitToTitle() {
+        this.scene.stop('PowerUpScene');
+        this.scene.stop('UIScene');
+        this.restoreGameplayVisibility();
+        this.scene.start('TitleScene');
+    }
+
+    private hideGameplayForPowerUp() {
+        this.isGameplayHiddenForPowerUp = true;
+        this.cameras.main.setVisible(false);
+        const uiScene = this.scene.get('UIScene') as Phaser.Scene | undefined;
+        uiScene?.cameras?.main?.setVisible(false);
+    }
+
+    private restoreGameplayVisibility() {
+        if (!this.isGameplayHiddenForPowerUp) return;
+        this.isGameplayHiddenForPowerUp = false;
+        this.cameras.main.setVisible(true);
+        const uiScene = this.scene.get('UIScene') as Phaser.Scene | undefined;
+        uiScene?.cameras?.main?.setVisible(true);
     }
 
     private createGameTextures() {
