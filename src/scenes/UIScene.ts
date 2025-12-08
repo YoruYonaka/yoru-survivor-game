@@ -22,16 +22,39 @@ export default class UIScene extends Phaser.Scene {
     }
 
     create() {
+        // Reset pause state and overlay every time the scene starts
+        this.isGamePaused = false;
+        if (this.pauseOverlay) {
+            this.pauseOverlay.destroy();
+            this.pauseOverlay = undefined;
+        }
+
         this.createExpBar();
         this.createHUD();
         this.createPauseButton();
 
         // Listen to events from GameScene
         const gameScene = this.scene.get('GameScene');
+        gameScene.events.off('updateHP', this.onUpdateHP, this);
+        gameScene.events.off('updateEXP', this.onUpdateEXP, this);
+        gameScene.events.off('updateScore', this.onUpdateScore, this);
+        gameScene.events.off('pauseStateChanged', this.onPauseStateChanged, this);
         gameScene.events.on('updateHP', this.onUpdateHP, this);
         gameScene.events.on('updateEXP', this.onUpdateEXP, this);
         gameScene.events.on('updateScore', this.onUpdateScore, this);
         gameScene.events.on('pauseStateChanged', this.onPauseStateChanged, this);
+
+        this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+            gameScene.events.off('updateHP', this.onUpdateHP, this);
+            gameScene.events.off('updateEXP', this.onUpdateEXP, this);
+            gameScene.events.off('updateScore', this.onUpdateScore, this);
+            gameScene.events.off('pauseStateChanged', this.onPauseStateChanged, this);
+            if (this.pauseOverlay) {
+                this.pauseOverlay.destroy();
+                this.pauseOverlay = undefined;
+            }
+            this.isGamePaused = false;
+        });
 
         // Initial updates
         this.updateHPBar();

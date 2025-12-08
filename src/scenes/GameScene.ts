@@ -56,9 +56,23 @@ export default class GameScene extends Phaser.Scene {
     }
 
     create() {
+        // Reset state every time the scene starts so re-entries from the title work correctly
         this.isPaused = false;
         this.isPowerUpSelection = false;
+        this.isGameplayHiddenForPowerUp = false;
         this.killCount = 0;
+
+        // Clean up any lingering listeners from previous runs
+        this.events.off('requestPause', this.onPauseRequested, this);
+        this.events.off('requestResume', this.onResumeRequested, this);
+        this.events.off('requestExitToTitle', this.onExitToTitleRequested, this);
+        this.events.off('levelUp', this.onLevelUp, this);
+        this.events.off('playerDead', this.onGameOver, this);
+
+        // Ensure core systems start unpaused on fresh entries
+        this.physics.resume();
+        this.time.paused = false;
+
         this.createGameTextures();
 
         // Background
