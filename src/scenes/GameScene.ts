@@ -7,6 +7,7 @@ import ExpGem from '../objects/ExpGem';
 import UIScene from './UIScene';
 import DataManager from '../utils/DataManager';
 import type { RunUpgradeType } from './PowerUpScene';
+import DamagePopup from '../objects/DamagePopup';
 
 interface VirtualJoystick {
     createCursorKeys(): Phaser.Types.Input.Keyboard.CursorKeys;
@@ -29,8 +30,11 @@ export default class GameScene extends Phaser.Scene {
     private enemies!: Phaser.Physics.Arcade.Group;
     private projectiles!: Phaser.Physics.Arcade.Group;
     private expGems!: Phaser.Physics.Arcade.Group;
+    private enemyParticleManager!: Phaser.GameObjects.Particles.ParticleEmitterManager;
+    private enemyDeathEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
     private killCount: number = 0;
     private readonly dataManager = DataManager.instance;
+    private readonly missingAssetKeys: Set<string> = new Set();
 
     private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
     private joyStickCursors?: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -50,7 +54,7 @@ export default class GameScene extends Phaser.Scene {
         });
 
         this.load.on(Phaser.Loader.Events.FILE_LOAD_ERROR, (file: Phaser.Loader.File) => {
-            // We will generate textures in create() to ensure specific shapes
+            this.missingAssetKeys.add(file.key);
             console.warn(`Details: ${file.key} failed to load.`);
         });
     }
@@ -153,6 +157,8 @@ export default class GameScene extends Phaser.Scene {
         // Events
         this.events.on('levelUp', this.onLevelUp, this);
         this.events.on('playerDead', this.onGameOver, this);
+
+        this.setupEnemyParticles();
     }
 
     update(time: number, delta: number) {
@@ -193,6 +199,7 @@ export default class GameScene extends Phaser.Scene {
 
     private handlePlayerEnemyCollision(_player: Player, enemy: Enemy) {
         this.player.takeDamage(10);
+        this.player.playDamageFeedback(this.cameras.main);
         // Simple bounce back
         const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.x, enemy.y);
         const bounceDistance = 50;
@@ -207,7 +214,12 @@ export default class GameScene extends Phaser.Scene {
 
         const isDead = enemy.takeDamage(this.player.getDamage());
 
+        DamagePopup.spawn(this, enemy.x, enemy.y - 10, this.player.getDamage());
+
         if (isDead) {
+            if (this.enemyDeathEmitter) {
+                this.enemyDeathEmitter.explode(14, enemy.x, enemy.y);
+            }
             const gem = this.expGems.get(enemy.x, enemy.y, ASSETS.EXP_GEM.key) as ExpGem;
             if (gem) {
                 gem.setActive(true);
@@ -352,50 +364,60 @@ export default class GameScene extends Phaser.Scene {
         graphics.strokePath();
 
         graphics.generateTexture('background_grid', 128, 128);
-        // IMPORTANT: Do NOT destroy graphics yet as we use it for other textures below, 
+        // IMPORTANT: Do NOT destroy graphics yet as we use it for other textures below,
         // OR clear it. The original code destroyed it at the END.
         // We will clear it.
 
-        // Player: Cyan Circle
-        if (!this.textures.exists(ASSETS.PLAYER.key) || true) { // Force update
+        const ensureTexture = (key: string, generator: () => void) => {
+            if (this.textures.exists(key) && !this.missingAssetKeys.has(key)) {
+                return;
+            }
+            if (this.textures.exists(key)) this.textures.remove(key);
             graphics.clear();
-            graphics.fillStyle(0x00FFFF); // Cyan
+            generator();
+        };
+
+        // Player: Cyan Circle
+        ensureTexture(ASSETS.PLAYER.key, () => {
+            graphics.fillStyle(0x00ffff);
             graphics.fillCircle(16, 16, 16);
-            graphics.lineStyle(2, 0xFFFFFF);
+            graphics.lineStyle(2, 0xffffff);
             graphics.strokeCircle(16, 16, 16);
-            if (this.textures.exists(ASSETS.PLAYER.key)) this.textures.remove(ASSETS.PLAYER.key);
             graphics.generateTexture(ASSETS.PLAYER.key, 32, 32);
-        }
+        });
 
         // ENEMY: Red Square (Bat)
-        if (!this.textures.exists(ASSETS.ENEMY_BAT.key) || true) {
-            graphics.clear();
-            graphics.fillStyle(0xFF0000); // Red
+        ensureTexture(ASSETS.ENEMY_BAT.key, () => {
+            graphics.fillStyle(0xff3b30);
             graphics.fillRect(0, 0, 32, 32);
             graphics.lineStyle(2, 0x880000);
             graphics.strokeRect(0, 0, 32, 32);
-            if (this.textures.exists(ASSETS.ENEMY_BAT.key)) this.textures.remove(ASSETS.ENEMY_BAT.key);
             graphics.generateTexture(ASSETS.ENEMY_BAT.key, 32, 32);
-        }
+        });
+
+        // ENEMY SLIME: Purple Blob
+        ensureTexture(ASSETS.ENEMY_SLIME.key, () => {
+            graphics.fillStyle(0x7c3aed);
+            graphics.fillRoundedRect(0, 4, 32, 24, 12);
+            graphics.lineStyle(2, 0x4c1d95);
+            graphics.strokeRoundedRect(0, 4, 32, 24, 12);
+            graphics.generateTexture(ASSETS.ENEMY_SLIME.key, 32, 32);
+        });
 
         // PROJECTILE: Yellow Circle (Bullet)
-        if (!this.textures.exists(ASSETS.BULLET.key) || true) {
-            graphics.clear();
-            graphics.fillStyle(0xFFFF00); // Yellow
+        ensureTexture(ASSETS.BULLET.key, () => {
+            graphics.fillStyle(0xffff00);
             graphics.fillCircle(8, 8, 8);
-            if (this.textures.exists(ASSETS.BULLET.key)) this.textures.remove(ASSETS.BULLET.key);
             graphics.generateTexture(ASSETS.BULLET.key, 16, 16);
-        }
+        });
 
         // EXP GEM: 4-Pointed Star (Greenish/Yellow)
-        if (!this.textures.exists(ASSETS.EXP_GEM.key) || true) {
-            graphics.clear();
-            graphics.fillStyle(0x00FF00); // Green
-
+        ensureTexture(ASSETS.EXP_GEM.key, () => {
             const size = 32;
             const half = size / 2;
             const inner = 6;
 
+            graphics.fillStyle(0x00ff99);
             graphics.beginPath();
             graphics.moveTo(half, 0);
             graphics.lineTo(half + inner, half - inner);
@@ -408,13 +430,39 @@ export default class GameScene extends Phaser.Scene {
             graphics.closePath();
             graphics.fillPath();
 
-            graphics.lineStyle(2, 0xFFFFFF);
+            graphics.lineStyle(2, 0xffffff);
             graphics.strokePath();
 
-            if (this.textures.exists(ASSETS.EXP_GEM.key)) this.textures.remove(ASSETS.EXP_GEM.key);
             graphics.generateTexture(ASSETS.EXP_GEM.key, 32, 32);
-        }
+        });
+
+        // ENEMY PARTICLE: small bright square
+        ensureTexture('enemy_particle', () => {
+            graphics.fillStyle(0xffd166);
+            graphics.fillRect(0, 0, 6, 6);
+            graphics.lineStyle(1, 0xff7f50);
+            graphics.strokeRect(0, 0, 6, 6);
+            graphics.generateTexture('enemy_particle', 6, 6);
+        });
 
         graphics.destroy();
+    }
+
+    private setupEnemyParticles() {
+        if (this.enemyParticleManager) {
+            this.enemyParticleManager.destroy();
+        }
+
+        this.enemyParticleManager = this.add.particles('enemy_particle');
+        this.enemyDeathEmitter = this.enemyParticleManager.createEmitter({
+            lifespan: 600,
+            speed: { min: 80, max: 160 },
+            scale: { start: 1, end: 0 },
+            alpha: { start: 1, end: 0 },
+            blendMode: Phaser.BlendModes.ADD,
+            angle: { min: 0, max: 360 },
+            gravityY: 80,
+            on: false,
+        });
     }
 }
