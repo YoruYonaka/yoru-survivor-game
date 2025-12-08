@@ -235,6 +235,7 @@ export default class GameScene extends Phaser.Scene {
             onSelectUpgrade: (type: 'attack' | 'speed' | 'heal') => this.handlePowerUpSelection(type),
             onReturnToTitle: () => this.exitToTitle(),
         });
+        this.scene.bringToTop('PowerUpScene');
     }
 
     private onGameOver() {

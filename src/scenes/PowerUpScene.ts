@@ -13,15 +13,18 @@ export default class PowerUpScene extends Phaser.Scene {
     }
 
     create(data: PowerUpSceneData) {
+        this.input.topOnly = true;
+        this.scene.bringToTop();
         this.cameras.main.setBackgroundColor('#0b0c10');
 
         const width = this.cameras.main.width;
         const height = this.cameras.main.height;
 
-        const backdrop = this.add.rectangle(width / 2, height / 2, width, height, 0x020617, 0.92);
+        const backdrop = this.add.rectangle(width / 2, height / 2, width, height, 0x020617, 1);
         backdrop.setOrigin(0.5);
+        backdrop.setInteractive();
 
-        const panel = this.add.rectangle(width / 2, height / 2, 760, 480, 0x0f172a, 0.95);
+        const panel = this.add.rectangle(width / 2, height / 2, 760, 480, 0x0f172a, 1);
         panel.setStrokeStyle(3, 0x38bdf8);
 
         const title = this.add.text(width / 2, height / 2 - 200, 'POWER UP!', {
